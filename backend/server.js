@@ -12,9 +12,13 @@ if (process.env.TRUST_PROXY === "true") {
   app.set("trust proxy", 1);
 }
 
+function normalizeOrigin(origin = "") {
+  return origin.trim().replace(/\/+$/, "");
+}
+
 const allowedOrigins = (process.env.CORS_ORIGIN || "")
   .split(",")
-  .map((origin) => origin.trim())
+  .map((origin) => normalizeOrigin(origin))
   .filter(Boolean);
 
 const requestCounts = new Map();
@@ -55,7 +59,8 @@ app.use(rateLimiter);
 app.use(express.json({ limit: process.env.JSON_LIMIT || "100kb" }));
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+    const normalizedOrigin = normalizeOrigin(origin || "");
+    if (!normalizedOrigin || allowedOrigins.length === 0 || allowedOrigins.includes(normalizedOrigin)) {
       return callback(null, true);
     }
     return callback(new Error("Origin not allowed by CORS"));
