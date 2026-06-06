@@ -47,6 +47,10 @@ export function normalizeProduct(product) {
     oldPrice: product.oldPrice || Math.round(price * 1.16),
     rating: product.rating || 4.2,
     stock_left: stockLeft,
+    offer_label: product.offer_label || "",
+    unit_size: product.unit_size || "",
+    ingredients: product.ingredients || "",
+    details: Array.isArray(product.details) ? product.details : product.details ? [product.details].flat() : [],
     image:
       product.images?.[0] ||
       product.image ||

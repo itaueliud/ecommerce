@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const { createDelivery, getDeliveryByOrder, updateDeliveryStatus } = require("../controllers/deliveryController");
-const { protect, authorizeRoles } = require("../middleware/authMiddleware");
+const { protect, adminOnly } = require("../middleware/authMiddleware");
 
-router.post("/", protect, authorizeRoles("admin"), createDelivery);
+router.post("/", protect, adminOnly, createDelivery);
 router.get("/order/:orderId", protect, getDeliveryByOrder);
-router.put("/:id", protect, authorizeRoles("admin"), updateDeliveryStatus);
+router.put("/:id", protect, adminOnly, updateDeliveryStatus);
 
 module.exports = router;

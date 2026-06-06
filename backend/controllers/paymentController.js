@@ -2,6 +2,7 @@ const Customer = require("../models/Customer");
 const Order = require("../models/Order");
 const Payment = require("../models/Payment");
 const Product = require("../models/Product");
+const mongoose = require("mongoose");
 
 function mpesaPaybill() {
   return {
@@ -14,7 +15,7 @@ async function getOwnedOrder(req, orderId) {
   const order = await Order.findById(orderId).populate("customer_id");
   if (!order) return null;
 
-  const isAdmin = req.user.role === "admin";
+  const isAdmin = req.user.role === "admin" || req.user.role === "superadmin";
   const isOwner = String(order.customer_id?.user_id || "") === String(req.user._id);
   return isAdmin || isOwner ? order : false;
 }
@@ -104,6 +105,126 @@ const createPayment = async (req, res) => {
   }
 };
 
+function formatMpesaPhone(phone = "") {
+  const digits = String(phone).replace(/\D/g, "");
+  if (digits.startsWith("254")) return digits;
+  if (digits.startsWith("0")) return `254${digits.slice(1)}`;
+  if (digits.length === 9) return `254${digits}`;
+  return digits;
+}
+
+function getMpesaTimestamp(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds())
+  ].join("");
+}
+
+async function getMpesaAccessToken() {
+  const consumerKey = process.env.MPESA_CONSUMER_KEY;
+  const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
+  if (!consumerKey || !consumerSecret) {
+    throw new Error("Missing M-Pesa consumer credentials");
+  }
+
+  const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
+  const response = await fetch("https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials", {
+    headers: { Authorization: `Basic ${auth}` }
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.errorMessage || "Failed to fetch M-Pesa access token");
+  }
+  return data.access_token;
+}
+
+function getStkPassword(shortcode, passkey, timestamp) {
+  return Buffer.from(`${shortcode}${passkey}${timestamp}`).toString("base64");
+}
+
+const initiateMpesaStkPush = async (req, res) => {
+  try {
+    const { phone, amount, orderId } = req.body;
+    const normalizedPhone = formatMpesaPhone(phone);
+    let order = null;
+    if (orderId) {
+      if (mongoose.Types.ObjectId.isValid(orderId)) {
+        order = await Order.findById(orderId).populate("customer_id");
+      } else {
+        order = await Order.findOne({ order_number: orderId }).populate("customer_id");
+      }
+    }
+
+    if (!normalizedPhone) {
+      return res.status(400).json({ message: "Valid client phone number is required" });
+    }
+
+    const paymentAmount = Number(amount || order?.total_amount || 0);
+    if (!paymentAmount || paymentAmount <= 0) {
+      return res.status(400).json({ message: "A valid payment amount is required" });
+    }
+
+    const shortcode = String(process.env.MPESA_SHORTCODE || "").trim();
+    const passkey = String(process.env.MPESA_PASSKEY || "").trim();
+    if (!shortcode || !passkey) {
+      return res.status(500).json({ message: "Missing M-Pesa shortcode or passkey" });
+    }
+
+    const timestamp = getMpesaTimestamp();
+    const password = getStkPassword(shortcode, passkey, timestamp);
+    const accessToken = await getMpesaAccessToken();
+    const callbackUrl = process.env.MPESA_CALLBACK_URL || `${process.env.PUBLIC_BASE_URL || "http://localhost:5000"}/api/payments/mpesa/callback`;
+
+    const stkResponse = await fetch("https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({
+        BusinessShortCode: shortcode,
+        Password: password,
+        Timestamp: timestamp,
+        TransactionType: "CustomerPayBillOnline",
+        Amount: paymentAmount,
+        PartyA: normalizedPhone,
+        PartyB: shortcode,
+        PhoneNumber: normalizedPhone,
+        CallBackURL: callbackUrl,
+        AccountReference: order?.order_number || orderId || "POS-SALE",
+        TransactionDesc: "POS payment"
+      })
+    });
+    const data = await stkResponse.json();
+    if (!stkResponse.ok || data.errorCode) {
+      return res.status(400).json({ message: data.errorMessage || data.errorMessage || "M-Pesa STK push failed" });
+    }
+
+    if (order) {
+      await Payment.create({
+        order_id: order._id,
+        customer_id: order.customer_id._id,
+        amount: paymentAmount,
+        method: "mpesa",
+        checkout_request_id: data.CheckoutRequestID,
+        merchant_request_id: data.MerchantRequestID,
+        status: "pending",
+        paybill_number: process.env.MPESA_PAYBILL_NUMBER || undefined,
+        account_number: process.env.MPESA_ACCOUNT_NUMBER || undefined
+      });
+    }
+
+    res.status(201).json(data);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 const getPaymentByOrder = async (req, res) => {
   try {
     const order = await getOwnedOrder(req, req.params.orderId);
@@ -180,4 +301,4 @@ const mpesaCallback = async (req, res) => {
   }
 };
 
-module.exports = { createPayment, getPaymentByOrder, confirmPayment, mpesaCallback };
+module.exports = { createPayment, getPaymentByOrder, confirmPayment, mpesaCallback, initiateMpesaStkPush };

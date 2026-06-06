@@ -83,6 +83,7 @@ app.use("/api/reviews",     require("./routes/reviewRoutes"));
 app.use("/api/banners",     require("./routes/bannerRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api/analytics",   require("./routes/analyticsRoutes"));
+app.use("/api/superadmin",  require("./routes/superAdminRoutes"));
 
 app.get("/", (req, res) => res.json({ message: "FMCG Platform API Running" }));
 

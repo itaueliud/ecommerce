@@ -6,7 +6,8 @@ const userSchema = new mongoose.Schema({
   email:           { type: String, required: true, unique: true },
   phone:           { type: String, required: true, unique: true },
   password_hash:   { type: String, required: true },
-  role:            { type: String, enum: ["customer", "supplier", "agent", "admin"], default: "customer" },
+  role:            { type: String, enum: ["customer", "admin", "superadmin"], default: "customer" },
+  blocked:         { type: Boolean, default: false },
   status:          { type: String, enum: ["active", "suspended", "pending"], default: "pending" },
   profile_picture: { type: String, default: "" },
   last_login:      { type: Date }

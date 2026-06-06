@@ -6,6 +6,7 @@ import PromoGrid from "../components/PromoGrid.jsx";
 import ServicePanel from "../components/ServicePanel.jsx";
 import { targetCategories } from "../data/catalog.js";
 import { categorySlug, formatMoney, getStockLeft } from "../utils/catalog.js";
+import { applyProductImageFallback, buildBannerGraphic, getProductImage } from "../utils/productImage.js";
 
 const kenyaCounties = [
   "Nairobi",
@@ -76,7 +77,7 @@ function ProductDetail({ product, onClose, onAdd }) {
         <button className="dialog-close" type="button" aria-label="Close product details" onClick={onClose}>
           x
         </button>
-        <img src={product.image} alt={product.name} />
+        <img src={getProductImage(product)} alt={product.name} onError={(event) => applyProductImageFallback(event, product)} />
         <div className="product-detail-body">
           <span className="product-breadcrumb">Danaba FMCG / {product.category}</span>
           <h2 id="product-detail-title">{product.name}</h2>
@@ -159,11 +160,15 @@ export default function Marketplace({
   searchTerm,
   setSearchTerm,
   onAddToCart,
+  wishlistIds = [],
+  onAddToWishlist,
+  onRemoveFromWishlist,
   selectedCategory = ""
 }) {
   const navigate = useNavigate();
   const [selectedProduct, setSelectedProduct] = useState(null);
   const query = searchTerm.trim().toLowerCase();
+  const heroGraphic = buildBannerGraphic({ title: "Stock up faster", subtitle: "Danaba wholesale week" });
 
   const sectionCategories = [
     ...targetCategories,
@@ -221,10 +226,7 @@ export default function Marketplace({
             </div>
           </div>
           <div className="hero-media" aria-hidden="true">
-            <img
-              src="https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=900&q=80"
-              alt=""
-            />
+            <img src={heroGraphic} alt="" />
           </div>
         </section>
 
@@ -246,7 +248,15 @@ export default function Marketplace({
               </div>
               <div className="product-grid">
                 {section.products.map((product) => (
-                  <ProductCard product={product} onAdd={onAddToCart} onView={setSelectedProduct} key={product._id} />
+                  <ProductCard
+                    product={product}
+                    onAdd={onAddToCart}
+                    onAddToWishlist={onAddToWishlist}
+                    onRemoveFromWishlist={onRemoveFromWishlist}
+                    isWishlisted={wishlistIds.includes(product._id)}
+                    onView={setSelectedProduct}
+                    key={product._id}
+                  />
                 ))}
               </div>
             </section>

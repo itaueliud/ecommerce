@@ -119,6 +119,97 @@ const createOrder = async (req, res) => {
   }
 };
 
+const createPosOrder = async (req, res) => {
+  try {
+    const requestedItems = Array.isArray(req.body.items) ? req.body.items : [];
+    const clientPhone = String(req.body.clientPhone || req.body.client_phone || "").trim();
+
+    if (!clientPhone) {
+      return res.status(400).json({ message: "Client phone number is required" });
+    }
+
+    if (requestedItems.length === 0) {
+      return res.status(400).json({ message: "POS order must include at least one item" });
+    }
+
+    const normalizedItems = requestedItems.map((item) => ({
+      product_id: item.product_id || item.productId || item._id,
+      quantity: normalizeQuantity(item.quantity || item.qty)
+    }));
+
+    if (normalizedItems.some((item) => !mongoose.Types.ObjectId.isValid(item.product_id) || item.quantity <= 0)) {
+      return res.status(400).json({ message: "Every POS item must include a valid product and quantity" });
+    }
+
+    const productIds = [...new Set(normalizedItems.map((item) => String(item.product_id)))];
+    const products = await Product.find({ _id: { $in: productIds }, is_active: true });
+    const productMap = new Map(products.map((product) => [String(product._id), product]));
+
+    if (products.length !== productIds.length) {
+      return res.status(400).json({ message: "One or more POS products are unavailable" });
+    }
+
+    const orderItems = normalizedItems.map((item) => {
+      const product = productMap.get(String(item.product_id));
+      if (product.stock_left < item.quantity) {
+        throw new Error(`${product.name} only has ${product.stock_left} left in stock`);
+      }
+
+      const unitPrice = Number(product.price || 0);
+      return {
+        product_id: product._id,
+        quantity: item.quantity,
+        unit_price: unitPrice,
+        subtotal: unitPrice * item.quantity
+      };
+    });
+
+    const subtotal = orderItems.reduce((sum, item) => sum + item.subtotal, 0);
+    const customer = await getOrCreateCustomer(req.user._id);
+
+    const order = await Order.create({
+      customer_id: customer._id,
+      items: orderItems,
+      delivery_address: {
+        full_name: req.user.full_name,
+        phone: clientPhone,
+        county: "",
+        town: "POS Counter",
+        details: "In-store POS sale"
+      },
+      subtotal,
+      delivery_fee: 0,
+      total_amount: subtotal,
+      notes: String(req.body.notes || "POS order").trim(),
+      status: "confirmed"
+    });
+
+    const populatedOrder = await Order.findById(order._id).populate("items.product_id", "name images image unit unit_size price");
+    res.status(201).json({
+      order: populatedOrder,
+      receipt: {
+        orderNumber: order.order_number,
+        items: orderItems.map((item) => {
+          const product = productMap.get(String(item.product_id));
+          return {
+            productId: String(item.product_id),
+            name: product?.name || "Product",
+            price: Number(product?.price || item.unit_price || 0),
+            qty: item.quantity,
+            subtotal: item.subtotal
+          };
+        }),
+        total: subtotal,
+        clientPhone,
+        date: new Date().toISOString(),
+        orderId: order._id
+      }
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
 const getAllOrders = async (req, res) => {
   try {
     const orders = await Order.find()
@@ -174,4 +265,4 @@ const getMyOrders = async (req, res) => {
   }
 };
 
-module.exports = { createOrder, getAllOrders, getOrderById, updateOrderStatus, getMyOrders };
+module.exports = { createOrder, createPosOrder, getAllOrders, getOrderById, updateOrderStatus, getMyOrders };

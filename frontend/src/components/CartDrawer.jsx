@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { API_BASE, formatMoney } from "../utils/catalog.js";
+import { applyProductImageFallback, getProductImage } from "../utils/productImage.js";
 
 const mpesaPayment = {
   businessNumber: "247247",
@@ -173,7 +174,7 @@ export default function CartDrawer({
             ) : (
               cart.map((item) => (
                 <div className="cart-line" key={item._id}>
-                  <img src={item.image} alt={item.name} />
+                  <img src={getProductImage(item)} alt={item.name} onError={(event) => applyProductImageFallback(event, item)} />
                   <div>
                     <strong>{item.name}</strong>
                     <span>

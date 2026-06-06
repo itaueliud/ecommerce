@@ -1,14 +1,18 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import CartDrawer from "./components/CartDrawer.jsx";
+import BottomNav from "./components/BottomNav.jsx";
 import Header from "./components/Header.jsx";
 import Toast from "./components/Toast.jsx";
 import { fallbackCategories, fallbackProducts, targetCategories } from "./data/catalog.js";
 import Account from "./pages/Account.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
+import CartPage from "./pages/CartPage.jsx";
 import Marketplace from "./pages/Marketplace.jsx";
 import CategoryPage from "./pages/CategoryPage.jsx";
+import ProductDetail from "./pages/ProductDetail.jsx";
 import Orders from "./pages/Orders.jsx";
+import SuperAdminDashboard from "./pages/SuperAdminDashboard.jsx";
+import Wishlist from "./pages/Wishlist.jsx";
 import Suppliers from "./pages/Suppliers.jsx";
 import { API_BASE, normalizeProduct } from "./utils/catalog.js";
 
@@ -19,16 +23,15 @@ export default function App() {
   const [cart, setCart] = useState([]);
   const [activeFilter, setActiveFilter] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [isCartOpen, setIsCartOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [authStatus, setAuthStatus] = useState("");
   const [currentUser, setCurrentUser] = useState(() => JSON.parse(localStorage.getItem("danabaUser") || "null"));
+  const [wishlist, setWishlist] = useState([]);
 
   const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.qty, 0), [cart]);
   const roleRedirects = {
+    superadmin: "/superadmin",
     admin: "/admin",
-    supplier: "/suppliers",
-    agent: "/orders",
     customer: "/"
   };
 
@@ -83,6 +86,18 @@ export default function App() {
     showToast(`${product.name} added to cart`);
   }
 
+  function addToWishlist(id) {
+    setWishlist((currentWishlist) => (currentWishlist.includes(id) ? currentWishlist : [...currentWishlist, id]));
+    const product = products.find((item) => item._id === id);
+    if (product) showToast(`${product.name} added to wishlist`);
+  }
+
+  function removeFromWishlist(id) {
+    setWishlist((currentWishlist) => currentWishlist.filter((item) => item !== id));
+    const product = products.find((item) => item._id === id);
+    if (product) showToast(`${product.name} removed from wishlist`);
+  }
+
   function updateQuantity(id, direction) {
     setCart((currentCart) =>
       currentCart
@@ -94,8 +109,7 @@ export default function App() {
   function finishAuthRedirect(role) {
     if (localStorage.getItem("danabaPendingCheckout") === "true") {
       localStorage.removeItem("danabaPendingCheckout");
-      setIsCartOpen(true);
-      navigate("/");
+      navigate("/cart");
       return;
     }
 
@@ -154,7 +168,6 @@ export default function App() {
 
   function requireCheckoutAccount() {
     localStorage.setItem("danabaPendingCheckout", "true");
-    setIsCartOpen(false);
     showToast("Create or sign in to your account before checkout.");
     navigate("/account");
   }
@@ -164,13 +177,35 @@ export default function App() {
     showToast(`Order ${receipt.orderNumber} confirmed.`);
   }
 
+  function upsertProduct(product) {
+    const normalizedProduct = normalizeProduct(product);
+    setProducts((currentProducts) => {
+      const exists = currentProducts.some((item) => item._id === normalizedProduct._id);
+      if (!exists) {
+        return [normalizedProduct, ...currentProducts];
+      }
+      return currentProducts.map((item) => (item._id === normalizedProduct._id ? normalizedProduct : item));
+    });
+  }
+
+  function removeProduct(id) {
+    setProducts((currentProducts) => currentProducts.filter((item) => item._id !== id));
+  }
+
+  function signOut() {
+    localStorage.removeItem("danabaUser");
+    setCurrentUser(null);
+    setAuthStatus("Signed out.");
+    navigate("/");
+  }
+
   return (
     <>
       <Header
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         cartCount={cartCount}
-        onCartOpen={() => setIsCartOpen(true)}
+        onCartOpen={() => navigate("/cart")}
         currentUser={currentUser}
       />
       <Routes>
@@ -185,8 +220,49 @@ export default function App() {
               searchTerm={searchTerm}
               setSearchTerm={setSearchTerm}
               onAddToCart={addToCart}
+              wishlistIds={wishlist}
+              onAddToWishlist={addToWishlist}
+              onRemoveFromWishlist={removeFromWishlist}
             />
           }
+        />
+        <Route
+          path="/product/:productId"
+          element={
+            <ProductDetail
+              products={products}
+              onAddToCart={addToCart}
+              wishlistIds={wishlist}
+              onAddToWishlist={addToWishlist}
+              onRemoveFromWishlist={removeFromWishlist}
+            />
+          }
+        />
+        <Route
+          path="/wishlist"
+          element={
+            <Wishlist
+              products={products}
+              wishlistIds={wishlist}
+              onAddToCart={addToCart}
+              onAddToWishlist={addToWishlist}
+              onRemoveFromWishlist={removeFromWishlist}
+            />
+          }
+        />
+        <Route path="/cart" element={
+          <CartPage
+            cart={cart}
+            onQtyChange={updateQuantity}
+            currentUser={currentUser}
+            onRequireAccount={requireCheckoutAccount}
+            onOrderConfirmed={handleOrderConfirmed}
+            onCloseCart={() => navigate("/")}
+          />
+        } />
+        <Route
+          path="/categories"
+          element={<Navigate to="/" replace />}
         />
         <Route
           path="/categories/:categorySlug"
@@ -199,11 +275,14 @@ export default function App() {
               searchTerm={searchTerm}
               setSearchTerm={setSearchTerm}
               onAddToCart={addToCart}
+              wishlistIds={wishlist}
+              onAddToWishlist={addToWishlist}
+              onRemoveFromWishlist={removeFromWishlist}
             />
           }
         />
         <Route path="/suppliers" element={<Suppliers />} />
-        <Route path="/account" element={<Account authStatus={authStatus} onLogin={login} onRegister={registerCustomer} />} />
+        <Route path="/account" element={<Account authStatus={authStatus} onLogin={login} onRegister={registerCustomer} currentUser={currentUser} onSignOut={signOut} />} />
         <Route path="/orders" element={<Orders currentUser={currentUser} showToast={showToast} />} />
         <Route
           path="/admin"
@@ -212,23 +291,32 @@ export default function App() {
               <AdminDashboard
                 products={products}
                 currentUser={currentUser}
-                onProductCreated={(product) => setProducts((currentProducts) => [normalizeProduct(product), ...currentProducts])}
+                onProductCreated={upsertProduct}
+                onProductSaved={upsertProduct}
+                onProductDeleted={removeProduct}
               />
             ) : (
               <Navigate to="/account" replace />
             )
           }
         />
+        <Route
+          path="/superadmin"
+          element={
+            currentUser?.role === "superadmin" ? (
+            <SuperAdminDashboard
+              products={products}
+              currentUser={currentUser}
+              onProductSaved={upsertProduct}
+              onProductDeleted={removeProduct}
+            />
+            ) : (
+              <Navigate to="/account" replace />
+            )
+          }
+        />
       </Routes>
-      <CartDrawer
-        cart={cart}
-        isOpen={isCartOpen}
-        onClose={() => setIsCartOpen(false)}
-        onQtyChange={updateQuantity}
-        currentUser={currentUser}
-        onRequireAccount={requireCheckoutAccount}
-        onOrderConfirmed={handleOrderConfirmed}
-      />
+      <BottomNav cartCount={cartCount} onCartOpen={() => navigate("/cart")} />
       <Toast message={toast} />
     </>
   );

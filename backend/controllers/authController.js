@@ -77,6 +77,9 @@ const loginUser = async (req, res) => {
 
     const user = await User.findOne({ email });
     if (user && (await user.matchPassword(password))) {
+      if (user.blocked) {
+        return res.status(403).json({ message: "Your account has been blocked" });
+      }
       await User.findByIdAndUpdate(user._id, { last_login: new Date() });
       res.json({
         _id: user._id,
