@@ -1,0 +1,27 @@
+[2m11:58:56 AM[22m [31m[1m[vite][22m[39m [31mInternal server error: Failed to resolve import "./pages/Orders.jsx" from "src/App.jsx". Does the file exist?[39m
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/my projects/danaba/frontend/src/App.jsx[39m:11:19
+[33m  9  |  import Marketplace from "./pages/Marketplace.jsx";
+  10 |  import CategoryPage from "./pages/CategoryPage.jsx";
+  11 |  import Orders from "./pages/Orders.jsx";
+     |                      ^
+  12 |  import Suppliers from "./pages/Suppliers.jsx";
+  13 |  import { API_BASE, normalizeProduct } from "./utils/catalog.js";[39m
+      at TransformPluginContext._formatLog (file:///C:/my%20projects/danaba/frontend/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:42658:41)
+      at TransformPluginContext.error (file:///C:/my%20projects/danaba/frontend/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:42655:16)
+      at normalizeUrl (file:///C:/my%20projects/danaba/frontend/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:40634:23)
+      at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+      at async file:///C:/my%20projects/danaba/frontend/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:40753:37
+      at async Promise.all (index 10)
+      at async TransformPluginContext.transform (file:///C:/my%20projects/danaba/frontend/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:40680:7)
+      at async EnvironmentPluginContainer.transform (file:///C:/my%20projects/danaba/frontend/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:42453:18)
+      at async loadAndTransform (file:///C:/my%20projects/danaba/frontend/node_modules/vite/dist/node/chunks/dep-Dm0c1Wj2.js:35845:27)
+[2m11:58:56 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to resolve import "./pages/Orders.jsx" from "src/App.jsx". Does the file exist?
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/my projects/danaba/frontend/src/App.jsx[39m:11:19
+[33m  9  |  import Marketplace from "./pages/Marketplace.jsx";
+  10 |  import CategoryPage from "./pages/CategoryPage.jsx";
+  11 |  import Orders from "./pages/Orders.jsx";
+     |                      ^
+  12 |  import Suppliers from "./pages/Suppliers.jsx";
+  13 |  import { API_BASE, normalizeProduct } from "./utils/catalog.js";[39m
