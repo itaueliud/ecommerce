@@ -1,7 +1,6 @@
 const dotenv = require("dotenv");
 const connectDB = require("../config/db");
 const User = require("../models/User");
-const bcrypt = require("bcryptjs");
 
 dotenv.config();
 
@@ -16,14 +15,14 @@ async function main() {
   }
 
   await connectDB();
+  console.log(`Connected to database: ${User.db.name}`);
 
   const existing = await User.findOne({ email });
-  const passwordHash = await bcrypt.hash(password, 10);
 
   if (existing) {
     existing.full_name = fullName;
     existing.phone = phone || existing.phone;
-    existing.password_hash = passwordHash;
+    existing.password_hash = password;
     existing.role = "admin";
     existing.status = "active";
     await existing.save();
@@ -40,7 +39,7 @@ async function main() {
     full_name: fullName,
     email,
     phone,
-    password_hash: passwordHash,
+    password_hash: password,
     role: "admin",
     status: "active"
   });
