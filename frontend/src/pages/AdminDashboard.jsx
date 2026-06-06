@@ -36,9 +36,25 @@ export default function AdminDashboard({ products, currentUser, onProductCreated
   const [productForm, setProductForm] = useState(emptyProductForm);
   const [status, setStatus] = useState("Loading live admin dashboard data.");
   const [productStatus, setProductStatus] = useState("");
+  const [posSearch, setPosSearch] = useState("");
+  const [posCart, setPosCart] = useState([]);
+  const [clientPhone, setClientPhone] = useState("");
+  const [receipt, setReceipt] = useState(null);
+  const [posStatus, setPosStatus] = useState("");
+  const [isGeneratingReceipt, setIsGeneratingReceipt] = useState(false);
+  const [isSendingPayment, setIsSendingPayment] = useState(false);
 
   const topProducts = useMemo(() => products.slice(0, 5), [products]);
   const checkoutAlerts = useMemo(() => orders.slice(0, 5), [orders]);
+  const posProducts = useMemo(() => {
+    const query = posSearch.trim().toLowerCase();
+    if (!query) return products.slice(0, 12);
+    return products.filter((product) => {
+      const haystack = `${product.name} ${product.brand || ""} ${product.category || ""} ${product.unit_size || ""}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [products, posSearch]);
+  const posTotal = useMemo(() => posCart.reduce((sum, item) => sum + item.price * item.qty, 0), [posCart]);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -96,58 +112,109 @@ export default function AdminDashboard({ products, currentUser, onProductCreated
     setProductForm((currentForm) => ({ ...currentForm, [field]: value }));
   }
 
-  async function handleCreateProduct(event) {
-    event.preventDefault();
+  function addToPosCart(product) {
+    setPosCart((currentCart) => {
+      const existing = currentCart.find((item) => item._id === product._id);
+      if (existing) {
+        return currentCart.map((item) => (item._id === product._id ? { ...item, qty: item.qty + 1 } : item));
+      }
+      return [...currentCart, { ...product, qty: 1 }];
+    });
+    setPosStatus(`${product.name} added to POS cart.`);
+  }
 
-    if (!currentUser?.token) {
-      setProductStatus("Sign in as an admin before adding products.");
+  function updatePosQuantity(id, direction) {
+    setPosCart((currentCart) =>
+      currentCart
+        .map((item) => (item._id === id ? { ...item, qty: item.qty + direction } : item))
+        .filter((item) => item.qty > 0)
+    );
+  }
+
+  async function generateReceipt() {
+    if (!posCart.length) {
+      setPosStatus("Add at least one product to the POS cart first.");
+      return;
+    }
+    if (!clientPhone.trim()) {
+      setPosStatus("Enter the client's phone number first.");
       return;
     }
 
-    const selectedCategory = categories.find((category) => category._id === productForm.category_id);
-    const name = productForm.name.trim();
-    const price = Number(productForm.price);
-
-    if (!name || !selectedCategory || !price) {
-      setProductStatus("Enter a product name, category, and price.");
-      return;
-    }
-
-    const payload = {
-      name,
-      slug: `${slugify(name)}-${Date.now()}`,
-      brand: productForm.brand.trim(),
-      category_id: productForm.category_id,
-      description: productForm.description.trim(),
-      price,
-      oldPrice: Number(productForm.oldPrice) || Math.round(price * 1.16),
-      stock_left: Number(productForm.stock_left) || 0,
-      unit: productForm.unit,
-      unit_size: productForm.unit_size.trim(),
-      images: productForm.image.trim() ? [productForm.image.trim()] : [],
-      tags: [selectedCategory.name]
-    };
-
-    setProductStatus("Adding product...");
+    setIsGeneratingReceipt(true);
+    setPosStatus("Generating receipt...");
 
     try {
-      const response = await fetch(`${API_BASE}/products`, {
+      const response = await fetch(`${API_BASE}/orders/pos`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${currentUser.token}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          items: posCart.map((item) => ({ productId: item._id, qty: item.qty })),
+          clientPhone
+        })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "Could not add product");
+      if (!response.ok) throw new Error(data.message || "Failed to generate receipt");
 
-      onProductCreated?.(data);
-      setProductForm({ ...emptyProductForm, category_id: productForm.category_id });
-      setProductStatus(`${data.name} added to the catalog.`);
+      const receiptData = data.receipt || {
+        orderNumber: data.order?.order_number || `ORD-${Date.now()}`,
+        items: posCart,
+        total: posTotal,
+        clientPhone,
+        date: new Date().toISOString(),
+        orderId: data.order?._id
+      };
+      setReceipt(receiptData);
+      setPosStatus(`Receipt ${receiptData.orderNumber} ready.`);
     } catch (error) {
-      setProductStatus(error.message);
+      setPosStatus(error.message);
+    } finally {
+      setIsGeneratingReceipt(false);
     }
+  }
+
+  async function initiatePayment() {
+    if (!receipt) {
+      setPosStatus("Generate a receipt before sending M-Pesa payment.");
+      return;
+    }
+
+    setIsSendingPayment(true);
+    setPosStatus("Sending M-Pesa prompt...");
+
+    try {
+      const response = await fetch(`${API_BASE}/payments/mpesa/stkpush`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentUser.token}`
+        },
+        body: JSON.stringify({
+          phone: clientPhone,
+          amount: receipt.total,
+          orderId: receipt.orderId || receipt.orderNumber
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Failed to send M-Pesa prompt");
+      setPosStatus("M-Pesa prompt sent successfully.");
+    } catch (error) {
+      setPosStatus(error.message);
+    } finally {
+      setIsSendingPayment(false);
+    }
+  }
+
+  function printReceipt() {
+    window.print();
+  }
+
+  async function handleCreateProduct(event) {
+    event.preventDefault();
+    setProductStatus("Product creation is now reserved for superadmin.");
   }
 
   return (
@@ -161,6 +228,114 @@ export default function AdminDashboard({ products, currentUser, onProductCreated
           </div>
           <span className="admin-session">{currentUser?.email}</span>
         </div>
+
+        <section className="admin-panel admin-panel-wide pos-panel">
+          <div className="admin-panel-head">
+            <h2>POS / Serve Customer</h2>
+            <span>Cashier mode</span>
+          </div>
+
+          <div className="pos-grid">
+            <div className="pos-column">
+              <label>
+                Search products
+                <input
+                  type="search"
+                  value={posSearch}
+                  onChange={(event) => setPosSearch(event.target.value)}
+                  placeholder="Search by product, brand, or category"
+                />
+              </label>
+              <div className="pos-product-list">
+                {posProducts.map((product) => (
+                  <button type="button" className="pos-product" key={product._id} onClick={() => addToPosCart(product)}>
+                    <strong>{product.name}</strong>
+                    <span>{product.category}</span>
+                    <b>{formatMoney(product.price)}</b>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="pos-column">
+              <h3>POS cart</h3>
+              <div className="pos-cart">
+                {posCart.length ? (
+                  posCart.map((item) => (
+                    <div className="pos-cart-row" key={item._id}>
+                      <strong>{item.name}</strong>
+                      <span>{formatMoney(item.price)}</span>
+                      <div className="qty-control">
+                        <button type="button" onClick={() => updatePosQuantity(item._id, -1)}>
+                          -
+                        </button>
+                        <span>{item.qty}</span>
+                        <button type="button" onClick={() => updatePosQuantity(item._id, 1)}>
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p>No products selected yet.</p>
+                )}
+              </div>
+              <div className="pos-total">
+                <span>Running total</span>
+                <strong>{formatMoney(posTotal)}</strong>
+              </div>
+            </div>
+
+            <div className="pos-column">
+              <label>
+                Client phone
+                <input
+                  type="tel"
+                  value={clientPhone}
+                  onChange={(event) => setClientPhone(event.target.value)}
+                  placeholder="07XXXXXXXX"
+                />
+              </label>
+              <button className="auth-submit" type="button" onClick={generateReceipt} disabled={isGeneratingReceipt}>
+                {isGeneratingReceipt ? "Generating..." : "Generate Receipt"}
+              </button>
+              <button className="auth-submit secondary-checkout" type="button" onClick={printReceipt} disabled={!receipt}>
+                Print Receipt
+              </button>
+              <button className="auth-submit" type="button" onClick={initiatePayment} disabled={!receipt || isSendingPayment}>
+                {isSendingPayment ? "Sending..." : "Pay via M-Pesa"}
+              </button>
+              {posStatus ? <p className="auth-status">{posStatus}</p> : null}
+            </div>
+          </div>
+
+          <div className="receipt-printable">
+            {receipt ? (
+              <article className="thermal-receipt">
+                <h3>Danaba FMCG</h3>
+                <p>POS Receipt</p>
+                <p>{new Date(receipt.date).toLocaleString()}</p>
+                <p>Order: {receipt.orderNumber}</p>
+                <p>Client: {receipt.clientPhone}</p>
+                <div className="thermal-lines">
+                  {receipt.items.map((item) => (
+                    <div key={item._id} className="thermal-line">
+                      <span>
+                        {item.name} x{item.qty}
+                      </span>
+                      <strong>{formatMoney(item.price * item.qty)}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div className="thermal-total">
+                  <span>Total</span>
+                  <strong>{formatMoney(receipt.total)}</strong>
+                </div>
+                <p>Thank you for shopping with us.</p>
+              </article>
+            ) : null}
+          </div>
+        </section>
 
         <div className="admin-stats">
           <article>
@@ -308,12 +483,12 @@ export default function AdminDashboard({ products, currentUser, onProductCreated
                 />
               </label>
               <label className="admin-field-wide">
-                Image URL
+                Image file or URL
                 <input
-                  type="url"
+                  type="text"
                   value={productForm.image}
                   onChange={(event) => updateProductForm("image", event.target.value)}
-                  placeholder="https://..."
+                  placeholder="Milo 500g.webp or https://..."
                 />
               </label>
               <label className="admin-field-wide">
